@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>QR Attendance System</title>
+
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <style>
+    body {
+      font-family:Courier;
+      justify-content:center;
+      align-items:center;
+      background-image: url("logo5.jpg");
+      margin: 0;
+      height: 30vh;
+      text-align: center;
+      background-size: 110vh;
+    }
+
+    h2 { color: black; }
+
+    #reader {
+      width: 300px;
+      margin: auto;
+      background: #FFFFFFFF;
+      padding: 10px;
+      border-radius: 10px;
+    }
+
+    table {
+      margin: 20px auto;
+      width: 90%;
+      border-collapse: collapse;
+      background: white;
+    }
+
+    th {
+      background:  #5482e6;
+      color: white;
+      padding: 10px;
+    }
+
+    td {
+      border: 1px solid #ddd;
+      padding: 8px;
+    }
+
+    tr:nth-child(even) { background: #f1f5f9; }
+
+    .present {
+      background: #2ECC71;
+      color: #166534;
+      font-weight: bold;
+    }
+
+    .late {
+      background:darkgoldenrod;
+      color: Yellow;
+      font-weight: bold;
+    }
+
+    .absent {
+      background: #fecaca;
+      color: #7f1d1d;
+      font-weight: bold;
+    }
+
+    button {
+      padding: 10px 20px;
+      background: GREEN;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    button:hover { background: #2ECC71; }
+  </style>
+</head>
+
+<body>
+
+<h2>QR Attendance System</h2>
+<p>
+
+<div id="reader"></div>
+
+<table id="attendanceTable">
+  <tr>
+    <th>Student Name</th>
+    <th>Date</th>
+    <th>Time</th>
+    <th>Status</th>
+  </tr>
+</table>
+
+<br>
+<button onclick="exportToCSV()">⬇ Export to Excel</button>
+
+<script>
+const students = {
+  "104971140002": "Amoranto Jaz Chine Kenth",
+  "158542150101": "Angel Geliane Q.",
+  "136473150058": "Arago Chris Justin P.",
+  "158528140092": "Ardenia Joshua D.",
+  "136792140419": "Argente Jayson A.",
+  "136858140676": "Cajes Vincent T.",
+  "158528140305": "Capile Raine Allen ST.",
+  "158538140318": "Corcino Ralfred D.",
+  "104728150190": "Diaz Jude",
+  "104762140040": "Estrella Hanson C.",
+  "104762140085": "Estrella Marc Danniel A.",
+  "104770140048": "Fajutnao Kenneth B.",
+  "158528140034": "Francisco Jovelle B.",
+  "158538114002": "Garcia Raniel I.",
+  "104769140113": "Hernandez Nico S.",
+  "105309130326": "Inefable Steven M.",
+  "158528140035": "Jarapa John Kevin G.",
+  "105794130044": "Laugo Mark Angelo A.",
+  "104981130061": "Libiran Warren R.",
+  "104769140114": "Legaspi Lance Kobe B.",
+  "136497140260": "Malla Alex Jaz Z.",
+  "104762140094": "Moreno Marco Angelo D.",
+  "158528130375": "Orzal John Carl P.",
+  "158528150272": "Padernal Prince Daryl V.",
+  "158528140235": "Pedragosa Jomer P.",
+  "105972140014": "Perez Jerome B.",
+  "158528140038": "Rivera Cyruz J.",
+  "104766140347": "Tamayo Daril Miguel B.",
+  "158538130309": "Acibal Kc T.",
+  "103508140012": "Azarcon Ma. Ashley Dhenize J.",
+  "127524140010": "Balaba Kate Jannelle G.",
+  "158542150089": "Batis Rodelyn C.",
+  "136430150283": "Buluran Mich Anne T.",
+  "158528140462": "Butor Leticia B.",
+  "114003140240": "Calumarde Jade Amber B.",
+  "158528140044": "Derigay Jhelamae P.",
+  "104770140025": "Guyla Rosalinda M.",
+  "158528140207": "Rosas Mary Jane L.",
+  "136808140025": "Turan Kimbay  P.",
+  "104769140174":  "Usero Rhian Stephanie Dc.",
+};
+
+function onScanSuccess(decodedText) {
+  let table = document.getElementById("attendanceTable");
+
+
+  let studentName = students[decodedText] || "Unknown Student";
+  for (let i = 1; i < table.rows.length; i++) {
+    if (table.rows[i].cells[0].innerText === studentName) return;
+  }
+
+  let row = table.insertRow();
+  let nameCell = row.insertCell(0);
+  let dateCell = row.insertCell(1);
+  let timeCell = row.insertCell(2);
+  let statusCell = row.insertCell(3);
+
+  let now = new Date();
+
+  let presentCutoff = new Date();
+  presentCutoff.setHours(6, 30, 0, 0);
+
+  let absentCutoff = new Date();
+  absentCutoff.setHours(12, 0, 0, 0);
+
+  let status = "";
+  if (now <= presentCutoff) {
+    status = "Present";
+    statusCell.className = "present";
+  } else if (now < absentCutoff) {
+    status = "Late";
+    statusCell.className = "late";
+  } else {
+    status = "Absent";
+    statusCell.className = "absent";
+  }
+
+  nameCell.innerHTML = studentName;
+  dateCell.innerHTML = now.toLocaleDateString();
+  timeCell.innerHTML = now.toLocaleTimeString();
+  statusCell.innerHTML = status;
+}
+
+let scanner = new Html5QrcodeScanner(
+  "reader",
+  { fps: 10, qrbox: 250 }
+);
+scanner.render(onScanSuccess);
+
+function exportToCSV() {
+  let table = document.getElementById("attendanceTable");
+  let csv = [];
+
+  for (let i = 0; i < table.rows.length; i++) {
+    let row = [];
+    for (let j = 0; j < table.rows[i].cells.length; j++) {
+      row.push(table.rows[i].cells[j].innerText);
+    }
+    csv.push(row.join(","));
+  }
+
+  let blob = new Blob([csv.join("\n")], { type: "text/csv" }); 
+  let link = document.createElement("a");
+   link.href = URL.createObjectURL(blob);
+   link.download= "CP.csv";
+  link.click();
+}
+</script>
+<br>
+<style>
+        .logout-container {
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .initial-logout-btn {
+            width: 28%;
+            padding: 10px;
+            background-color: red;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        .initial-logout-btn:hover {
+            background-color: Gray;
+        }
+        .cancel-link {
+            display: block;
+            margin-top: 1rem;
+            color: #6c757d;
+            text-decoration: none;
+        }
+        .cancel-link:hover {
+            color: #495057;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            text-align: center;
+            width: 200%;
+            max-width: 200px;
+        }
+        .modal-btn-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+        .modal-btn-group button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        .confirm-logout-btn {
+            background-color: Red;
+            color: White;
+        }
+        .confirm-logout-btn:hover {
+            background-color: #c82333;
+        }
+        .cancel-logout-btn {
+            background-color: green;
+            color: White;
+        }
+        .cancel-logout-btn:hover {
+            background-color: GRAY;
+        }
+    </style>
+    </head>
+<body>
+    
+    <div class="logout-container">
+        <button class="initial-logout-btn" onclick="showConfirmModal()">Log Out</button>
+    </div>
+
+    <div class="modal" id="logoutConfirmationModal">
+        <div class="modal-content">
+            <h3>Are you sure you want to log out?</h3>
+            <p>You will lose access to your session after logging out.</p>
+            <div class="modal-btn-group">
+
+                <form action="login.html" method="POST" style="margin: 0; flex: 1;">
+                    <button type="submit" class="confirm-logout-btn">Yes, Log Out
+                 Now</button>
+                </form>
+                <button class="cancel-logout-btn" onclick="hideConfirmModal()">No, Stay Logged In</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        
+        function showConfirmModal() {
+            document.getElementById('logoutConfirmationModal').style.display = 'flex';
+        }
+
+        function hideConfirmModal() {
+            document.getElementById('logoutConfirmationModal').style.display = 'none';
+        }
+    </script>
+
+ 
+<h4>
+<a href="https://www.google.com/aclk?sa=L&pf=1&ai=DChsSEwjMuuyPp9aSAxUXjbkFHTJ0BPEYACICCAEQABoCdG0&co=1&ase=2&gclid=EAIaIQobChMIzLrsj6fWkgMVF425BR0ydATxEAAYASAAEgLoy_D_BwE&cid=CAASugHkaCHmYudv474JFNQy8R1RteREgzms6l1LGZoiT_605rN76bTsmBEQSoGiF4vssR3ag6NEoyal3yys0Vdl8jd0ApOW10bSb9KcejTYfUIPcCnKE3I_wIR9B4oGXA8gWqQ2dzAbOJGpfLFXHDR2rWOqJ7gsaM4IgDVrmdnAsoEOU6_sPO556Iv6jx6khwN0VuN40O8At63j3HBSnRCq5IoFcPNmQ2FLgxVrRi7VX1gNP6FVGnhuuMVIE_k&cce=2&category=acrcp_v1_32&sig=AOD64_0TryX2fvWaDn6n89KSvDYjVhDT9g&q&nis=4&adurl=https://quickchart.io/qr-code-api/?gad_source%3D1%26gad_campaignid%3D20924226900%26gbraid%3D0AAAAADh8lNgNdf0x60qMQG3Y6BzYS3YWv%26gclid%3DEAIaIQobChMIzLrsj6fWkgMVF425BR0ydATxEAAYASAAEgLoy_D_BwE&ved=2ahUKEwjIt-aPp9aSAxWNqFYBHWtULbgQ0Qx6BAgXEAE"> 
+For new students create your QR code here.</h4>
+</body>
+</html>

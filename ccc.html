@@ -54,6 +54,8 @@ button {
   background: red;
 }
 </style>
+</head>
+
 <body>
 
 <h2>QR Attendance System</h2>
@@ -184,10 +186,8 @@ function onScanSuccess(decodedText){
   unlock();
 }
 
-window.onload = function () {
-   new Html5QrcodeScanner("reader",{fps:10,qrbox:250})
-   .render(onScanSuccess);
-};
+function unlock(){setTimeout(()=>scanLocked=false,scanDelay);}
+new Html5QrcodeScanner("reader",{fps:10,qrbox:250}).render(onScanSuccess);
 
 function markAllAbsent(){
   let table=document.getElementById("attendanceTable");
@@ -222,7 +222,7 @@ function exportToCSV(){
         .logout-container {
             border-radius: 8px;
             padding: 2rem;
-            text-align: center;
+            text-align: cen
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         .initial-logout-btn {

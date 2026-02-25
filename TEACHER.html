@@ -1,0 +1,595 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>QR Attendance System</title>
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<style>
+body {
+  font-family: Courier;
+  background-image: url("logo5.jpg");
+  margin: 0;
+  text-align: center;
+  background-size: 75vh;
+}
+
+#scanMessage { font-weight: bold; margin: 10px; font-size: 18px; }
+.success { color: green; }
+.error { color: red; }
+
+#reader {
+  width: 300px;
+  margin: auto;
+  background: white;
+  padding: 10px;
+  border-radius: 10px;
+}
+
+table {
+  margin: 20px auto;
+  width: 90%;
+  border-collapse: collapse;
+  background: white;
+}
+
+th { background: #5482e6; color: white; padding: 10px; }
+td { border: 1px solid #ddd; padding: 8px; }
+
+.present { background: #2ECC71; color: #166534; font-weight: bold; }
+.late { background: darkgoldenrod; color: yellow; font-weight: bold; }
+.absent { background: #fecaca; color: #7f1d1d; font-weight: bold; }
+
+button {
+  padding: 10px 20px;
+  background: green;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  margin: 5px;
+  cursor: pointer;
+}
+
+.logout {
+  background: red;
+}
+</style>
+</head>
+
+<body>
+
+<h2>QR Attendance System</h2>
+
+<button class="inBtn" onclick="setMode('in')">🟢 Time In</button>
+<button class="outBtn" onclick="setMode('out')">🔵 Time Out</button>
+<h3 id="modeLabel">Mode: Time In</h3>
+
+<div id="scanMessage"></div>
+<div id="reader"></div>
+
+<table id="attendanceTable">
+<tr>
+  <th>Student Name</th>
+  <th>Date</th>
+  <th>Time In</th>
+  <th>Time Out</th>
+  <th>Status</th>
+</tr>
+</table>
+
+<button onclick="markAllAbsent()">Mark Unscanned as Absent</button>
+<button onclick="exportToCSV()">Export to Excel</button>
+<script>
+let mode="in";
+let scanLocked=false;
+let scanDelay=5000;
+
+function setMode(m){
+  mode=m;
+  document.getElementById("modeLabel").innerText=
+    mode==="in"?"Mode: Time In":"Mode: Time Out";
+}
+
+function beep(freq,duration){
+  let ctx=new(window.AudioContext||window.webkitAudioContext)();
+  let o=ctx.createOscillator();
+  o.frequency.value=freq;
+  o.connect(ctx.destination);
+  o.start();
+  setTimeout(()=>o.stop(),duration);
+}
+  function todayKey(){
+  let d=new Date();
+  return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();
+}
+
+function loadAttendance(){
+  let savedDate=localStorage.getItem("attendance_date");
+  let today=todayKey();
+
+  if(savedDate !== today){ // Use strict inequality
+    localStorage.removeItem("attendance_data");
+    localStorage.setItem("attendance_date", today);
+  }
+
+  let data=localStorage.getItem("attendance_data");
+  if(data){
+    document.getElementById("attendanceTable").innerHTML=data;
+  }
+}
+
+function saveAttendance(){
+  localStorage.setItem("attendance_data",
+    document.getElementById("attendanceTable").innerHTML);
+}
+
+const teachers={
+  "5409102": { name: "Aguion Mark Anthony Reyes", schedule:{in:"6:30",out:"1:30"} },
+  "5387457": { name: "Baldelovar Jay R. Ramos", schedule:{in:"6:30",out:"1:30"} },
+  "5377305": { name: "Campita Mariel Sanchez", schedule:{in:"6:30",out:"2:30"} },
+  "5420803": { name: "Chico Romcel Molina", schedule:{in:"6:30",out:"1:30"} },
+  "5409101": { name: "Del Rosario Nover Francisco", schedule:{in:"6:30",out:"1:30"} },
+  "5379365": { name: "Erestain Theresa Del Monte", schedule:{in:"6:30",out:"1:30"} },
+  "4264902": { name: "Esteves Mattew Evan Mimay", schedule:{in:"6:30",out:"1:30"} },
+  "5420805": { name: "Justiniano Jervee Zamoraga", schedule:{in:"6:30",out:"1:30"} },
+  "5424004": { name: "Malveda Marjorie Brences", schedule:{in:"6:30",out:"1:30"} },
+  "5416428": { name: "Mesina Maylanie Panaligan", schedule:{in:"6:30",out:"1:30"} },
+  "5377312": { name: "Ramos Cristy Villangca", schedule:{in:"6:30",out:"1:30"} },
+  "5383040": { name: "San Victores Maritess Narciso", schedule:{in:"6:30",out:"1:30"} },
+  "5430367": { name: "Manato Allem Clarisse Galiga", schedule:{in:"6:30",out:"1:30"} },
+  "5405905": { name: "Acibar Senacio Roxas JR", schedule:{in:"6:30",out:"1:30"} },
+  "4159406": { name: "Rodriguez Karen Christine Alcantara", schedule:{in:"7:30",out:"2:30"} }
+};
+
+// Original getStatus function (no changes)
+function getStatus(now, schedule) {
+   let [inHour, inMin] = schedule.in.split(":").map(Number);
+  let [outHour, outMin] = schedule.out.split(":").map(Number);
+
+  let presentCutoff = new Date();
+  presentCutoff.setHours(inHour, inMin, 0, 0);
+
+  let absentCutoff = new Date();
+  absentCutoff.setHours(outHour, outMin, 0, 0);
+
+  if (now <= presentCutoff) return "Present";
+  if (now > presentCutoff && now <= absentCutoff) return "Late";
+  return "Absent";
+}
+
+function onScanSuccess(decodedText){
+  if(scanLocked)return;
+  scanLocked=true;
+
+  let msg=document.getElementById("scanMessage");
+  let table=document.getElementById("attendanceTable");
+  let teacher=teachers[decodedText];
+  
+  if(!teacher){
+    msg.innerText="❌ Unknown QR";
+    msg.className="error";
+    beep(300,200);
+    unlock();
+    return;
+  }
+
+  let name=teacher.name;
+  let now=new Date();
+  let dateStr=now.toLocaleDateString();
+  let timeStr=now.toLoca
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>QR Attendance System</title>
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<style>
+body {
+  font-family: Courier;
+  background-image: url("logo5.jpg");
+  margin: 0;
+  text-align: center;
+  background-size: 75vh;
+}
+
+#scanMessage { font-weight: bold; margin: 10px; font-size: 18px; }
+.success { color: green; }
+.error { color: red; }
+
+#reader {
+  width: 300px;
+  margin: auto;
+  background: white;
+  padding: 10px;
+  border-radius: 10px;
+}
+
+table {
+  margin: 20px auto;
+  width: 90%;
+  border-collapse: collapse;
+  background: white;
+}
+
+th { background: #5482e6; color: white; padding: 10px; }
+td { border: 1px solid #ddd; padding: 8px; }
+
+.present { background: #2ECC71; color: #166534; font-weight: bold; }
+.late { background: darkgoldenrod; color: yellow; font-weight: bold; }
+.absent { background: #fecaca; color: #7f1d1d; font-weight: bold; }
+
+button {
+  padding: 10px 20px;
+  background: green;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  margin: 5px;
+  cursor: pointer;
+}
+
+.logout {
+  background: red;
+}
+</style>
+</head>
+
+<body>
+
+<h2>QR Attendance System</h2>
+
+<button class="inBtn" onclick="setMode('in')">🟢 Time In</button>
+<button class="outBtn" onclick="setMode('out')">🔵 Time Out</button>
+<h3 id="modeLabel">Mode: Time In</h3>
+
+<div id="scanMessage"></div>
+<div id="reader"></div>
+
+<table id="attendanceTable">
+<tr>
+  <th>Student Name</th>
+  <th>Date</th>
+  <th>Time In</th>
+  <th>Time Out</th>
+  <th>Status</th>
+</tr>
+</table>
+
+<button onclick="markAllAbsent()">Mark Unscanned as Absent</button>
+<button onclick="exportToCSV()">Export to Excel</button>
+<script>
+let mode="in";
+let scanLocked=false;
+let scanDelay=5000;
+
+function setMode(m){
+  mode=m;
+  document.getElementById("modeLabel").innerText=
+    mode==="in"?"Mode: Time In":"Mode: Time Out";
+}
+
+function beep(freq,duration){
+  let ctx=new(window.AudioContext||window.webkitAudioContext)();
+  let o=ctx.createOscillator();
+  o.frequency.value=freq;
+  o.connect(ctx.destination);
+  o.start();
+  setTimeout(()=>o.stop(),duration);
+}
+  function todayKey(){
+  let d=new Date();
+  return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();
+}
+
+function loadAttendance(){
+  let savedDate=localStorage.getItem("attendance_date");
+  let today=todayKey();
+
+  if(savedDate !== today){ // Use strict inequality
+    localStorage.removeItem("attendance_data");
+    localStorage.setItem("attendance_date", today);
+  }
+
+  let data=localStorage.getItem("attendance_data");
+  if(data){
+    document.getElementById("attendanceTable").innerHTML=data;
+  }
+}
+
+function saveAttendance(){
+  localStorage.setItem("attendance_data",
+    document.getElementById("attendanceTable").innerHTML);
+}
+
+const teachers={
+  "5409102": { name: "Aguion Mark Anthony Reyes", schedule:{in:"6:30",out:"1:30"} },
+  "5387457": { name: "Baldelovar Jay R. Ramos", schedule:{in:"6:30",out:"1:30"} },
+  "5377305": { name: "Campita Mariel Sanchez", schedule:{in:"6:30",out:"2:30"} },
+  "5420803": { name: "Chico Romcel Molina", schedule:{in:"6:30",out:"1:30"} },
+  "5409101": { name: "Del Rosario Nover Francisco", schedule:{in:"6:30",out:"1:30"} },
+  "5379365": { name: "Erestain Theresa Del Monte", schedule:{in:"6:30",out:"1:30"} },
+  "4264902": { name: "Esteves Mattew Evan Mimay", schedule:{in:"6:30",out:"1:30"} },
+  "5420805": { name: "Justiniano Jervee Zamoraga", schedule:{in:"6:30",out:"1:30"} },
+  "5424004": { name: "Malveda Marjorie Brences", schedule:{in:"6:30",out:"1:30"} },
+  "5416428": { name: "Mesina Maylanie Panaligan", schedule:{in:"6:30",out:"1:30"} },
+  "5377312": { name: "Ramos Cristy Villangca", schedule:{in:"6:30",out:"1:30"} },
+  "5383040": { name: "San Victores Maritess Narciso", schedule:{in:"6:30",out:"1:30"} },
+  "5430367": { name: "Manato Allem Clarisse Galiga", schedule:{in:"6:30",out:"1:30"} },
+  "5405905": { name: "Acibar Senacio Roxas JR", schedule:{in:"6:30",out:"1:30"} },
+  "4159406": { name: "Rodriguez Karen Christine Alcantara", schedule:{in:"7:30",out:"2:30"} }
+};
+
+// Original getStatus function (no changes)
+function getStatus(now, schedule) {
+   let [inHour, inMin] = schedule.in.split(":").map(Number);
+  let [outHour, outMin] = schedule.out.split(":").map(Number);
+
+  let presentCutoff = new Date();
+  presentCutoff.setHours(inHour, inMin, 0, 0);
+
+  let absentCutoff = new Date();
+  absentCutoff.setHours(outHour, outMin, 0, 0);
+
+  if (now <= presentCutoff) return "Present";
+  if (now > presentCutoff && now <= absentCutoff) return "Late";
+  return "Absent";
+}
+
+function onScanSuccess(decodedText){
+  if(scanLocked)return;
+  scanLocked=true;
+
+  let msg=document.getElementById("scanMessage");
+  let table=document.getElementById("attendanceTable");
+  let teacher=teachers[decodedText];
+  
+  if(!teacher){
+    msg.innerText="❌ Unknown QR";
+    msg.className="error";
+    beep(300,200);
+    unlock();
+    return;
+  }
+
+  let name=teacher.name;
+  let now=new Date();
+  let dateStr=now.toLocaleDateString();
+  let timeStr=now.toLocaleTimeString();
+
+  let foundTeacherRow = null;
+  for(let i=1; i<table.rows.length; i++){
+    // Check if the teacher's name and date match for an existing entry
+    if(table.rows[i].cells[0].innerText === name && table.rows[i].cells[1].innerText === dateStr){
+      foundTeacherRow = table.rows[i];
+      break;
+    }
+  }
+
+  if(mode === "in"){
+    if(foundTeacherRow && foundTeacherRow.cells[2].innerText !== ""){
+      // Teacher already timed in today
+      msg.innerText="⚠ Already Timed In";
+      msg.className="error";
+      beep(300,200);
+    } else {
+      // Teacher is new or not yet timed in
+      let status = getStatus(now, teacher.schedule);
+      let row;
+      if (foundTeacherRow) {
+        // Update existing row if found but Time In is empty
+        row = foundTeacherRow;
+        // Ensure all cells exist for proper assignment
+        if (row.cells.length < 5) {
+            for (let k = row.cells.length; k < 5; k++) {
+                row.insertCell(k);
+            }
+        }
+      } else {
+        // Create a new row if not found at all
+        row = table.insertRow();
+        row.insertCell(0).innerText = name;
+        row.insertCell(1).innerText = dateStr;
+        row.insertCell(2); // Time In cell
+        row.insertCell(3); // Time Out cell
+        row.insertCell(4); // Status cell
+      }
+      row.cells[2].innerText = timeStr; // Set Time In
+      row.cells[4].innerText = status;
+      row.cells[4].className = status.toLowerCase();
+      
+      msg.innerText="✅ Time In Success (" + status + ")";
+      msg.className="success";
+      beep(900,150);
+      saveAttendance();
+    }
+  } else if (mode === "out"){
+    if(!foundTeacherRow || foundTeacherRow.cells[2].innerText === ""){
+      // Teacher has not timed in yet
+      msg.innerText="⚠ Must Time In first";
+      msg.className="error";
+      beep(300,200);
+    } else if (foundTeacherRow.cells[3].innerText !== ""){
+      // Teacher already timed out
+      msg.innerText="⚠ Already Timed Out";
+      msg.className="error";
+      beep(300,200);
+    } else {
+      // Record Time Out
+      foundTeacherRow.cells[3].innerText = timeStr;
+      msg.innerText="⏰ Time Out Recorded";
+      msg.className="success";
+      beep(900,150);
+      saveAttendance();
+    }
+  }
+
+  unlock();
+}
+
+function unlock(){
+  setTimeout(()=>scanLocked=false,scanDelay);
+}
+  
+new Html5QrcodeScanner("reader",{fps:10,qrbox:250}).render(onScanSuccess);
+  loadAttendance();
+
+function markAllAbsent(){
+  let table=document.getElementById("attendanceTable");
+  let scannedNamesForToday = new Set();
+  let now = new Date();
+  let dateStr = now.toLocaleDateString();
+
+  // Collect names of teachers already in the table for today
+  for (let i = 1; i < table.rows.length; i++) {
+      if (table.rows[i].cells[1].innerText === dateStr) {
+          scannedNamesForToday.add(table.rows[i].cells[0].innerText);
+      }
+  }
+
+  for(let id in teachers){
+    let name=teachers[id].name;
+    // Only add if not found in today's scanned names
+    if(!scannedNamesForToday.has(name)){ 
+      let row=table.insertRow();
+      row.insertCell(0).innerText=name;
+      row.insertCell(1).innerText=dateStr;
+      row.insertCell(2).innerText=""; // Time In
+      row.insertCell(3).innerText=""; // Time Out
+      row.insertCell(4).innerText="Absent";
+      row.cells[4].className="absent";
+    }
+  }
+  saveAttendance();
+}
+
+function exportToCSV(){
+  let rows=[...document.querySelectorAll("#attendanceTable tr")];
+  let csv=rows.map(r=>[...r.cells].map(c=>c.innerText).join(",")).join("\n");
+  let blob=new Blob([csv]);
+  let a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="Attendance.csv";
+  a.click();
+}
+
+</script>
+
+<!-- Start of your original Logout HTML and JavaScript -->
+<style>
+        .logout-container {
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: cen
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .initial-logout-btn {
+            width: 28%;
+            padding: 10px;
+            background-color: red;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        .initial-logout-btn:hover {
+            background-color: Gray;
+        }
+        .cancel-link {
+            display: block;
+            margin-top: 1rem;
+            color: #6c757d;
+            text-decoration: none;
+        }
+        .cancel-link:hover {
+            color: #495057;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;            text-align: center;
+            width: 200%;
+            max-width: 200px;
+        }        .modal-btn-group {
+            display: flex;
+            gap: 1rem;            margin-top: 1.5rem;
+        }
+        .modal-btn-group button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;            font-size: 1rem;
+        }
+        .confirm-logout-btn {
+            background-color: Red;
+            color: White;
+        }
+        .confirm-logout-btn:hover {
+            background-color: #c82333;
+        }
+        .cancel-logout-btn {
+            background-color: green;
+            color: White;
+        }
+        .cancel-logout-btn:hover {
+            background-color: GRAY;
+        }
+    </style>
+    </head>
+<body>
+    
+    <div class="logout-container">
+        <button class="initial-logout-btn" onclick="showConfirmModal()">Log Out</button>
+    </div>
+
+    <div class="modal" id="logoutConfirmationModal">
+        <div class="modal-content">
+            <h3>Are you sure you want to log out?</h3>
+            <p>You will lose access to your session after logging out.</p>
+            <div class="modal-btn-group">
+
+                <form action="index.html" style="margin: 0; flex: 1;">
+                    <button type="submit" class="confirm-logout-btn">Yes, Log Out
+                 Now</button>
+                </form>
+                <button class="cancel-logoutn" onclick="hideConfirmModal()">No, Stay Logged In</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        
+        function showConfirmModal() {
+            document.getElementById('logoutConfirmationModal').style.display = 'flex';
+        }
+
+        function hideConfirmModal() {
+            document.getElementById('logoutConfirmationModal').style.display = 'none';
+        }
+
+ </script>
+<h4>
+<a href="https://www.google.com/aclk?sa=L&pf=1&ai=DChsSEwjMuuyPp9aSAxUXjbkFHTJ0BPEYACICCAEQABoCdG0&co=1&ase=2&gclid=EAIaIQobChMIzLrsj6fWkgMVF425BR0ydATxEAAYASAAEgLoy_D_BwE&cid=CAASugHkaCHmYudv474JFNQy8R1RteREgzms6l1LGZoiT_605rN76bTsmBEQSoGiF4vssR3ag6NEoyal3yys0Vdl8jd0ApOW10bSb9KcejTYfUIPcCnKE3I_wIR9B4oGXA8gWqQ2dzAbOJGpfLFXHDR2rWOqJ7gsaM4IgDVrmdnAsoEOU6_sPO556Iv6jx6khwN0VuN40O8At63j3HBSnRCq5IoFcPNmQ2FLgxVrRi7VX1gNP6FVGnhuuMVIE_k&cce=2&category=acrcp_v1_32&sig=AOD64_0TryX2fvWaDn6n89KSvDYjVhDT9g&q&nis=4&adurl=https://quickchart.io/qr-code-api/?gad_source%3D1%26gad_campaignid%3D20924226900%26gbraid%3D0AAAAADh8lNgNdf0x60qMQG3Y6BzYS3YWv%26gclid%3DEAIaIQobChMIzLrsj6fWkgMVF425BR0ydATxEAAYASAAEgLoy_D_BwE&ved=2ahUKEwjIt-aPp9aSAxWNqFYBHWtULbgQ0Qx6BAgXEAE"> 
+For new teachers create your QR code here.</h4>
+</body>
+</html>

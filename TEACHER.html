@@ -159,92 +159,83 @@ function getStatus(now, schedule) {
 }
 
 function onScanSuccess(decodedText){
-  if(scanLocked)return;
-  scanLocked=true;
+  if(scanLocked) return;
+  scanLocked = true;
 
-  let msg=document.getElementById("scanMessage");
-  let table=document.getElementById("attendanceTable");
-  let teacher=teachers[decodedText];
-  
+  let msg = document.getElementById("scanMessage");
+  let table = document.getElementById("attendanceTable");
+  let teacher = teachers[decodedText];
+
   if(!teacher){
-    msg.innerText="❌ Unknown QR";
-    msg.className="error";
+    msg.innerText = "❌ Unknown QR";
+    msg.className = "error";
     beep(300,200);
     unlock();
     return;
   }
 
-  let name=teacher.name;
-  let now=new Date();
-  let dateStr=now.toLocaleDateString();
-  let timeStr=now.toLoca
+  let name = teacher.name;
+  let now = new Date();
+  let dateStr = now.toLocaleDateString();
+  let timeStr = now.toLocaleTimeString();
 
+  let row = null;
 
-
-
-
-  let foundTeacherRow = null;
-  for(let i=1; i<table.rows.length; i++){
-    // Check if the teacher's name and date match for an existing entry
-    if(table.rows[i].cells[0].innerText === name && table.rows[i].cells[1].innerText === dateStr){
-      foundTeacherRow = table.rows[i];
+  // Hanapin kung may row na today
+  for(let i=1;i<table.rows.length;i++){
+    if(
+      table.rows[i].cells[0].innerText === name &&
+      table.rows[i].cells[1].innerText === dateStr
+    ){
+      row = table.rows[i];
       break;
     }
   }
 
+  // 👉 TIME IN MODE
   if(mode === "in"){
-    if(foundTeacherRow && foundTeacherRow.cells[2].innerText !== ""){
-      // Teacher already timed in today
-      msg.innerText="⚠ Already Timed In";
-      msg.className="error";
+    if(row && row.cells[2].innerText){
+      msg.innerText = "⚠ Already Timed In";
+      msg.className = "error";
       beep(300,200);
     } else {
-      // Teacher is new or not yet timed in
-      let status = getStatus(now, teacher.schedule);
-      let row;
-      if (foundTeacherRow) {
-        // Update existing row if found but Time In is empty
-        row = foundTeacherRow;
-        // Ensure all cells exist for proper assignment
-        if (row.cells.length < 5) {
-            for (let k = row.cells.length; k < 5; k++) {
-                row.insertCell(k);
-            }
-        }
-      } else {
-        // Create a new row if not found at all
+      if(!row){
         row = table.insertRow();
         row.insertCell(0).innerText = name;
         row.insertCell(1).innerText = dateStr;
-        row.insertCell(2); // Time In cell
-        row.insertCell(3); // Time Out cell
-        row.insertCell(4); // Status cell
+        row.insertCell(2);
+        row.insertCell(3);
+        row.insertCell(4);
       }
-      row.cells[2].innerText = timeStr; // Set Time In
+
+      let status = getStatus(now, teacher.schedule);
+      row.cells[2].innerText = timeStr;
       row.cells[4].innerText = status;
       row.cells[4].className = status.toLowerCase();
-      
-      msg.innerText="✅ Time In Success (" + status + ")";
-      msg.className="success";
+
+      msg.innerText = "✅ Time In Success (" + status + ")";
+      msg.className = "success";
       beep(900,150);
       saveAttendance();
     }
-  } else if (mode === "out"){
-    if(!foundTeacherRow || foundTeacherRow.cells[2].innerText === ""){
-      // Teacher has not timed in yet
-      msg.innerText="⚠ Must Time In first";
-      msg.className="error";
+  }
+
+  // 👉 TIME OUT MODE
+  else {
+    if(!row || !row.cells[2].innerText){
+      msg.innerText = "⚠ Please Time In First";
+      msg.className = "error";
       beep(300,200);
-    } else if (foundTeacherRow.cells[3].innerText !== ""){
-      // Teacher already timed out
-      msg.innerText="⚠ Already Timed Out";
-      msg.className="error";
+    } 
+    else if(row.cells[3].innerText){
+      msg.innerText = "⚠ Already Timed Out";
+      msg.className = "error";
       beep(300,200);
-    } else {
-      // Record Time Out
-      foundTeacherRow.cells[3].innerText = timeStr;
-      msg.innerText="⏰ Time Out Recorded";
-      msg.className="success";
+    } 
+    else {
+      row.cells[3].innerText = timeStr;
+      msg.innerText = "⏰ Time Out Recorded";
+      msg.className = "success";
       beep(900,150);
       saveAttendance();
     }
